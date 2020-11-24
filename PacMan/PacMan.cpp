@@ -44,21 +44,34 @@ void DrawScore(float posX, float posY);
 void DrawMaze(void);
 void DrawPacman(void);
 void DrawItems(void);
+void DrawGhost(void);
 
 float pacman_pos[2] = { 0.1f, 0.1f };
 int pacman_pos_rel[2] = { 4, 5 }; // 팩맨 위치(row, col)
 int pacman_dir = 0; //0 = 왼쪽, 1 = 오른쪽, 2 = 위쪽, 3 = 아래쪽
 int pacman_next_dir = 0; //0 = 왼쪽, 1 = 오른쪽, 2 = 위쪽, 3 = 아래쪽
 bool pacman_move_stat = 0; //0 = 정지, 1 = 움직임 활성화
+void MovePacman(void);
 bool pacman_opmouth_flag = 1; //0=입 다물기, 1=입 벌리기
+void OpenPacmanMouth(void);
 int rotAngle[4] = {180, 0, 90, 270};
 bool bRight = true;
 
-void SetPacmanPosRel();
+void SetPacmanPosRel(void);
 int move_cnt = 0;
 
+int ghost_move_cnt = 0;
+int ghost_dir = 0; //0 = 왼쪽, 1 = 오른쪽, 2 = 위쪽, 3 = 아래쪽
+bool set_ghost_new_dir_flag = 0;
+void SetGhostDir(void);
+bool DoGhostCollide(void);
+
 float ghost_pos[2] = { 0.1f, 0.7f };
+int ghost_pos_rel[2] = { 1, 5 }; // 고스트 위치(row, col)
 float ghost_move = 0.05f;
+void MoveGhost(void);
+void DoGhostPacmanCollide(void);
+void SetGhostPosRel(void);
 
 bool items[10][10];
 int num_items = 0, total_items = 0;
@@ -288,40 +301,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         case IDT_TIMER:
             //DoCollide();
             if (pacman_move_stat == 1) { //움직임이 활성화된 상태
-                if (move_cnt == 0) {
-                    if (DoCollide() == false) {
-                        
-                    }
+                if (!(move_cnt == 0 && DoCollide() == true)) {
+                    MovePacman();
+                    OpenPacmanMouth();
                 }
-                move_cnt += 1;
-                switch (pacman_dir) {
-                case 0: // 왼쪽
-                    pacman_pos[0] -= 0.02f;
-                    break;
-                case 1: // 오른쪽
-                    pacman_pos[0] += 0.02f;
-                    break;
-                case 2: // 위쪽
-                    pacman_pos[1] += 0.02f;
-                    break;
-                case 3: // 아래쪽
-                    pacman_pos[1] -= 0.02f;
-                    break;
-                default:
-                    break;
-                }
-                if (move_cnt == 5) {
-                    pacman_opmouth_flag = 0;
-                }
-                if (move_cnt == 10) {
-                    SetPacmanPosRel();
-                    DoCollide();
-                    pacman_opmouth_flag = 1;
-                    move_cnt = 0;
-                    pacman_dir = pacman_next_dir;
-                }
-            }
 
+            }
+            MoveGhost();
             InvalidateRect(hWnd, NULL, false);
             break;
         }
@@ -452,38 +438,25 @@ void DrawScene(HDC MyDC)
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
+    // 고스트 그리기
+    DrawGhost();
+
     // 팩맨 그리기
     DrawPacman();
 
-    // 아이템 세팅하기
-    SetItems();
-
-    // 아이템 먹기
-    EatItems();
-
     // 아이템 그리기
+    SetItems();
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     DrawItems();
 
 
-    // 미로
+    // 미로 그리기
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     DrawMaze();
 
-    // 점수
+    // 점수 나타내기
     glColor3f(0.0f, 0.0f, 0.0f);
     DrawScore(1.1f, 0.8f);
-
-    // 팩맨 테두리
-    //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    //glColor3f(0.0f, 0.0f, 0.0f);
-    //glRectf(pacman_pos[0] - 0.1f, pacman_pos[1] - 0.1f, pacman_pos[0] + 0.1f, pacman_pos[1] + 0.1f);
-   
-    // 팩맨
-    //glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-    //glColor3f(1.0f, 1.0f, 0.0f);
-    //glRectf(pacman_pos[0] - 0.1f, pacman_pos[1] - 0.1f, pacman_pos[0] + 0.1f, pacman_pos[1] + 0.1f);
-
 
 
     SwapBuffers(MyDC);
@@ -542,13 +515,14 @@ void SetPacmanPosRel(void) {
 }
 
 void EatItems(void) {
-    //if (items[pacman_pos[0]][pacman_pos[1]] == 1) {
-    
-    //}
+    if (items[pacman_pos_rel[0]][pacman_pos_rel[1]] == 1) {
+        items[pacman_pos_rel[0]][pacman_pos_rel[1]] = 0;
+        num_items += 1;
+    }
 }
 
 void SetItems(void) {
-    if (itemSettingFlag == 0) {
+    if (itemSettingFlag == 0) { // 한번만 실행됨.
         itemSettingFlag = 1;
         for (int i = 0; i < 10; i++) {
             for (int j = 0; j < 10; j++) {
@@ -682,4 +656,183 @@ void DrawScore(float posX, float posY) {
     glRectf(posX - 0.02f, posY - 0.02f, posX + 0.23, posY + 0.05f);
 
     return;
+}
+
+void MovePacman(void) {
+    move_cnt += 1;
+    switch (pacman_dir) {
+    case 0: // 왼쪽
+        pacman_pos[0] -= 0.02f;
+        break;
+    case 1: // 오른쪽
+        pacman_pos[0] += 0.02f;
+        break;
+    case 2: // 위쪽
+        pacman_pos[1] += 0.02f;
+        break;
+    case 3: // 아래쪽
+        pacman_pos[1] -= 0.02f;
+        break;
+    default:
+        break;
+    }
+    if (move_cnt == 10) {
+        SetPacmanPosRel();
+        DoCollide();
+        move_cnt = 0;
+        pacman_dir = pacman_next_dir;
+        EatItems();
+    }
+}
+void OpenPacmanMouth(void) {
+    if (move_cnt == 5) {
+        pacman_opmouth_flag = 0;
+    }
+    if (move_cnt == 0) {
+        pacman_opmouth_flag = 1;
+    }
+}
+
+
+void DrawGhost(void) {
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    glBegin(GL_POLYGON);
+        glColor3f(0.2f, 0.2f, 0.8f);
+        glVertex2f(ghost_pos[0] - 0.05f, ghost_pos[1] - 0.05f);
+        glVertex2f(ghost_pos[0] - 0.05f, ghost_pos[1] + 0.05f);
+        glVertex2f(ghost_pos[0] + 0.05f, ghost_pos[1] + 0.05f);
+        glVertex2f(ghost_pos[0] + 0.05f, ghost_pos[1] - 0.05f);
+    glEnd();
+}
+
+void MoveGhost(void) {
+    ghost_move_cnt += 1;
+
+    // 충돌이 생겨서 새로운 방향 설정을 요하는 플래그가 활성화되면 새로운 방향 설정
+    if (set_ghost_new_dir_flag ==1) {
+        SetGhostDir();
+    }
+
+    // 고스트를 지정된 이동 방향으로 이동
+    if (ghost_dir == 0) {
+        ghost_pos[0] -= 0.025f;
+    }
+    else if (ghost_dir == 1) {
+        ghost_pos[0] += 0.025f;
+    }
+    else if (ghost_dir == 2) {
+        ghost_pos[1] += 0.025f;
+    }
+    else if (ghost_dir == 3) {
+        ghost_pos[1] -= 0.025f;
+    }
+    // 고스트 상대위치 재설정
+    SetGhostPosRel();
+    
+    // 벽과의 충돌 감지
+    DoGhostCollide();
+    // 팩맨과의 충돌 감지
+    DoGhostPacmanCollide();
+
+    // 고스트 무브 카운트(타임 틱)가 8이 되면 0으로 재설정
+    if (ghost_move_cnt == 8) {
+        ghost_move_cnt = 0;
+    }
+}
+
+void SetGhostPosRel(void) {
+    if (ghost_move_cnt == 7) {
+        switch (ghost_dir) {
+        case 0: // 왼쪽
+            ghost_pos_rel[1] -= 1;
+            break;
+        case 1: // 오른쪽
+            ghost_pos_rel[1] += 1;
+            break;
+        case 2: // 위쪽
+            ghost_pos_rel[0] -= 1;
+            break;
+        case 3: // 아래쪽
+            ghost_pos_rel[0] += 1;
+            break;
+        default:
+            break;
+        }
+    }
+}
+
+void SetGhostDir(void) {
+    if ((ghost_pos_rel[0] == 0) && (ghost_pos_rel[1] == 1)) {
+        ghost_dir = 3;
+    }
+    else if ((ghost_pos_rel[0] == 9) && (ghost_pos_rel[1] == 8)) {
+        ghost_dir = 2;
+    }
+    else {
+        // 네 방향 중에서 갈 수 있는 방향 추리기
+        bool checkDir[4] = { 0,0,0,0 }; // 좌, 우, 상, 하
+        OutputDebugString((to_string(ghost_pos_rel[0]) + to_string(ghost_pos_rel[1]) + "지금 위치. 어떤 방향으로 갈수있는지 추릴거다\n").c_str());
+        // check left
+        if (maze[(ghost_pos_rel[0] - 1)][ghost_pos_rel[1]] == 0) {
+            checkDir[0] = 1;
+        }
+        // check right
+        if (maze[(ghost_pos_rel[0] + 1)][ghost_pos_rel[1]] == 0) {
+            checkDir[1] = 1;
+        }
+        // check up
+        if (maze[(ghost_pos_rel[0])][ghost_pos_rel[1]-1] == 0) {
+            checkDir[2] = 1;
+        }
+        // check down
+        if (maze[(ghost_pos_rel[0])][ghost_pos_rel[1]+1] == 0) {
+            checkDir[3] = 1;
+        }
+        // 그 방향들 중 랜덤으로 선택하게 하기.
+        int dir = -1;
+        int temp = rand() % 4;
+        while (dir == (-1)) {
+            if (checkDir[temp] == 1) {
+                dir = temp;
+            }
+            temp = (temp + 1) % 4;
+            
+            string xtest = to_string(temp);
+            OutputDebugString(xtest.c_str());
+        }
+        ghost_dir = dir;
+    }
+    set_ghost_new_dir_flag = 0;
+}
+
+bool DoGhostCollide(void) {
+    int next_ghost_pos_rel[2] = { ghost_pos_rel[0],ghost_pos_rel[1] };
+
+	switch (ghost_dir) {
+	case 0: // 왼쪽
+		next_ghost_pos_rel[1] -= 1;
+		break;
+	case 1: // 오른쪽
+		next_ghost_pos_rel[1] += 1;
+		break;
+	case 2: // 위쪽
+		next_ghost_pos_rel[0] -= 1;
+		break;
+	case 3: // 아래쪽
+		next_ghost_pos_rel[0] += 1;
+		break;
+	default:
+		break;
+	}
+
+    if (maze[next_ghost_pos_rel[0]][next_ghost_pos_rel[1]] == 1) {
+        set_ghost_new_dir_flag = 1;
+        OutputDebugString((to_string(next_ghost_pos_rel[0]) + to_string(next_ghost_pos_rel[1]) + "충돌이 생겼다. 다음 갈곳은 이러해서\n").c_str());
+        return true;
+    }
+    else return false;
+}
+
+void DoGhostPacmanCollide() {
+
 }
